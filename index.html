@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Damage Control</title>
+  <style>
+    body {
+      font-family: 'Fixedsys', monospace;
+      text-align: center;
+      margin: 0;
+      background: #222;
+      color: white;
+    }
+
+    #start, #credits, #details, #game {
+      display: none;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      cursor: pointer;
+      font-family: 'Fixedsys', monospace;
+    }
+
+    #mapContainer {
+      position: relative;
+      display: inline-block;
+      margin-top: 20px;
+    }
+
+    #worldMap {
+      width: 800px;
+      height: auto;
+      display: block;
+    }
+
+    .disaster-dot {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      background: red;
+      border-radius: 50%;
+      cursor: pointer;
+      z-index: 2;
+    }
+
+    .pulse {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: rgba(255, 0, 0, 0.5);
+      animation: pulse 1.5s infinite;
+      transform: translate(-50%, -50%);
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0.8;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(3);
+        opacity: 0;
+      }
+    }
+
+    #details, #credits {
+      background: #fff;
+      color: #000;
+      padding: 20px;
+      width: 300px;
+      margin: 20px auto;
+      border-radius: 8px;
+      font-family: 'Fixedsys', monospace;
+    }
+
+    #ticker {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      background: #111;
+      color: #fff;
+      overflow: hidden;
+      white-space: nowrap;
+      font-family: 'Fixedsys', monospace;
+      font-size: 16px;
+      padding: 5px 0;
+    }
+
+    #ticker-text {
+      display: inline-block;
+      padding-left: 100%;
+      animation: ticker-scroll 20s linear infinite;
+    }
+
+    @keyframes ticker-scroll {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-100%); }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="start">
+    <h1>Damage Control</h1>
+    <p id="highScoreDisplay">High Score: 0</p>
+    <button onclick="startGame()">Play</button>
+    <button onclick="showCredits()">Credits</button>
+  </div>
+
+  <div id="credits">
+    <h2>Credits</h2>
+    <p>Wikipedia for the world map used (https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.svg)</p>
+    <button onclick="backToStart()">Back</button>
+  </div>
+
+  <div id="game">
+    <div id="mapContainer">
+      <img id="worldMap" src="https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.svg" alt="World Map">
+    </div>
+    <p id="score">Score: 0</p>
+    <p id="timer">Time Left: 05:00</p>
+    <button onclick="endGame()">End Game</button>
+  </div>
+
+  <div id="details">
+    <h3 id="dType"></h3>
+    <p id="dDesc"></p>
+    <div id="dOptions"></div>
+    <button onclick="closeDetails()">Back</button>
+  </div>
+
+  <div id="ticker"><span id="ticker-text">No disasters yet.</span></div>
+
+  <script>
+    const disasters = [
+      { type: 'Earthquake', desc: 'A major earthquake struck.', options: [
+        { text: 'Send rescue teams', effect: 10 },
+        { text: 'Wait', effect: -10 }
+      ]},
+      { type: 'Flood', desc: 'A flood has submerged towns.', options: [
+        { text: 'Evacuate', effect: 15 },
+        { text: 'Ignore', effect: -15 }
+      ]}
+    ];
+//locations are simply placeholders for now
+const locations = [
+  { x: 135, y: 100, name: 'USA' },
+  { x: 180, y: 200, name: 'Brazil' },
+  { x: 390, y: 95, name: 'UK' },
+  { x: 410, y: 160, name: 'Algeria' },
+  { x: 460, y: 140, name: 'Turkey' },
+  { x: 495, y: 170, name: 'Iran' },
+  { x: 500, y: 125, name: 'Ukraine' },
+  { x: 550, y: 150, name: 'India' },
+  { x: 600, y: 120, name: 'China' },
+  { x: 660, y: 100, name: 'Japan' },
+  { x: 530, y: 270, name: 'Kenya' },
+  { x: 640, y: 270, name: 'Indonesia' },
+  { x: 720, y: 300, name: 'Australia' },
+  { x: 150, y: 140, name: 'Mexico' },
+  { x: 330, y: 130, name: 'Greenland' },
+  { x: 420, y: 120, name: 'Germany' },
+  { x: 460, y: 260, name: 'Congo' },
+  { x: 520, y: 200, name: 'Saudi Arabia' },
+];
+
+
+    let score = 0;
+    let gameRunning = false;
+    let spawnInterval;
+    let gameTimeout;
+    let timerInterval;
+    let timeLeft = 300; 
+    let activeDisasters = [];
+    const mapContainer = document.getElementById('mapContainer');
+    const tickerText = document.getElementById('ticker-text');
+    const timerDisplay = document.getElementById('timer');
+
+    function loadHighScore() {
+      const stored = localStorage.getItem('highScore');
+      document.getElementById('highScoreDisplay').textContent = 'High Score: ' + (stored || 0);
+    }
+
+    function startGame() {
+      score = 0;
+      timeLeft = 300;
+      document.getElementById('score').textContent = 'Score: 0';
+      document.getElementById('start').style.display = 'none';
+      document.getElementById('game').style.display = 'block';
+      gameRunning = true;
+      spawnInterval = setInterval(spawnDisaster, 3000);
+      gameTimeout = setTimeout(endGame, 300000);
+      timerInterval = setInterval(updateTimer, 1000);
+      updateTimer();
+    }
+
+    function updateTimer() {
+      const minutes = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+      const seconds = String(timeLeft % 60).padStart(2, '0');
+      timerDisplay.textContent = `Time Left: ${minutes}:${seconds}`;
+      if (timeLeft <= 0) {
+        endGame();
+      }
+      timeLeft--;
+    }
+
+    function showCredits() {
+      document.getElementById('start').style.display = 'none';
+      document.getElementById('credits').style.display = 'block';
+    }
+
+    function backToStart() {
+      document.getElementById('credits').style.display = 'none';
+      document.getElementById('start').style.display = 'block';
+    }
+
+    function spawnDisaster() {
+      if (locations.length === 0) return;
+      const info = disasters[Math.floor(Math.random() * disasters.length)];
+      const location = locations[Math.floor(Math.random() * locations.length)];
+      const { x, y, name } = location;
+
+      const dot = document.createElement('div');
+      dot.className = 'disaster-dot';
+      dot.style.left = `${x}px`;
+      dot.style.top = `${y}px`;
+      dot.style.transform = 'translate(-50%, -50%)';
+
+      const pulse = document.createElement('div');
+      pulse.className = 'pulse';
+      pulse.style.left = `${x}px`;
+      pulse.style.top = `${y}px`;
+
+      const disasterId = Date.now() + Math.random();
+      const disasterEntry = {
+        id: disasterId,
+        type: info.type,
+        location: name,
+        dot,
+        pulse,
+        handled: false
+      };
+      activeDisasters.push(disasterEntry);
+
+      dot.onclick = () => showDetails(dot, pulse, info, disasterEntry);
+
+      mapContainer.appendChild(pulse);
+      mapContainer.appendChild(dot);
+
+      updateTicker();
+
+      setTimeout(() => {
+        if (!disasterEntry.handled && gameRunning) {
+          score -= 5;
+          document.getElementById('score').textContent = 'Score: ' + score;
+          dot.remove();
+          pulse.remove();
+          activeDisasters = activeDisasters.filter(d => d.id !== disasterEntry.id);
+          updateTicker();
+        }
+      }, 11000);
+    }
+
+    function showDetails(dot, pulse, info, disasterEntry) {
+      clearInterval(spawnInterval);
+      document.getElementById('dType').textContent = info.type;
+      document.getElementById('dDesc').textContent = info.desc;
+
+      const optionsDiv = document.getElementById('dOptions');
+      optionsDiv.innerHTML = '';
+      info.options.forEach(opt => {
+        const btn = document.createElement('button');
+        btn.textContent = opt.text;
+        btn.onclick = () => {
+          score += opt.effect;
+          document.getElementById('score').textContent = 'Score: ' + score;
+          dot.remove();
+          pulse.remove();
+          disasterEntry.handled = true;
+          activeDisasters = activeDisasters.filter(d => d.id !== disasterEntry.id);
+          updateTicker();
+          closeDetails();
+        };
+        optionsDiv.appendChild(btn);
+      });
+
+      document.getElementById('details').style.display = 'block';
+      mapContainer.style.display = 'none';
+    }
+
+    function closeDetails() {
+      document.getElementById('details').style.display = 'none';
+      mapContainer.style.display = 'inline-block';
+      if (gameRunning) spawnInterval = setInterval(spawnDisaster, 3000);
+    }
+
+    function updateTicker() {
+      tickerText.textContent = activeDisasters.length
+        ? activeDisasters.map(d => `${d.type} in ${d.location}`).join(' | ')
+        : 'No disasters yet.';
+    }
+
+    function endGame() {
+      gameRunning = false;
+      clearInterval(spawnInterval);
+      clearTimeout(gameTimeout);
+      clearInterval(timerInterval);
+      activeDisasters.forEach(d => {
+        d.dot.remove();
+        d.pulse.remove();
+      });
+      activeDisasters = [];
+      updateTicker();
+
+      const highScore = localStorage.getItem('highScore') || 0;
+      if (score > highScore) {
+        localStorage.setItem('highScore', score);
+      }
+
+      loadHighScore();
+      document.getElementById('game').style.display = 'none';
+      document.getElementById('start').style.display = 'block';
+    }
+
+    loadHighScore();
+    document.getElementById('start').style.display = 'block';
+  </script>
+  
+</body>
+</html>
